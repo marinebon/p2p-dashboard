@@ -1,0 +1,24 @@
+---
+title: "MBON Pole to Pole Dashboards"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+## Files
+
+Web pages in this repository:
+
+```{r, results='asis'}
+library(fs)
+library(glue)
+library(dplyr)
+
+d <- tibble(f = list.files(path = ".", pattern = ".*\\.html$")) %>% 
+  filter(f != "index.html")
+glue_data(d, "- [{fs::path_ext_remove(f)}](./{f})") %>% 
+  paste(collapse="\n") %>% cat()
+```
+
