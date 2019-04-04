@@ -1,54 +1,270 @@
 ---
-title: "Untitled"
-output: html_document
-params:  
-  data:  
-    input: file  
-    label: 'Input dataset:'  
-    value: myData.csv  
+title: "Community Analysis"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = T, message = F, warning = F)
 ```
 
-```{r data}
-cat(params$data)
-c <- read.csv(params$data)
-print(c)
-```
+- [P2P community analysis - Google Docs](https://docs.google.com/document/d/1Iu6seHxPXPGH-kiHr2NV0p0hBC_laOgaK1u19hKJWEA/edit#heading=h.v84ckom8081g)
+    - [NMDS Tutorial in R – sample(ECOLOGY)](https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/)
+    - [Lab 8. Communities](http://benbestphd.com/landscape-ecology-labs/lab8.html)
+
+## load packages
 
 ```{r}
-library(flexdashboard)
-library(readr)
-library(reshape2)
-library(leaflet)
-library(ggplot2)
+library(tidyverse)
 library(vegan)
-library(plotly)
-library(lubridate)
-library(dplyr)
+library(vegan3d)
+library(readxl)
+library(DT)
 
-library(RColorBrewer)
-palette(brewer.pal(8, "Set2"))
+set.seed(2) # for consistent vegan::metaMDS() results
 ```
+
+## Gregorio's Argentina rocky shore data
+
+- [P2P data templates](https://marinebon.github.io/p2p/methods_data_science.html)
+- Gregorio enters data:
+  `Biodiv_surverys/Argentina/GBigatti/Data_Sheet_RockyShore_GB_Puerto Madryn.xlsx`
+- ↳ Eduardo's P2P transformation:
+  [RS_dataTransform](https://marinebon.github.io/p2p-dashboard/RS_dataTransform.html)
+- ↳ P2P cleaned data: ~`sites.csv`, ~`obs.csv`
+- ↳ P2P analytical products, eg [p2p-dashboard](https://marinebon.github.io/p2p-dashboard), ....
+
+### load data
 
 ```{r}
+# paths
+data_dir  <- "~/Gdrive Ecoquants/projects/mbon/p2p/data/rocky"
+sites_csv <- file.path(data_dir, "AR-PMAD_dashboard-siteDF.csv") 
+obs_csv   <- file.path(data_dir, "AR-PMAD_dashboard-occurrence.csv") 
 
+# read data
+sites      <- read_csv(sites_csv)
+obs        <- read_csv(obs_csv)
+# View(obs)
+
+datatable(head(obs))
 ```
 
+### TODO: filter by date, strata
 
-```{r dataread, eval=F}
-#baseDataDir = "../data/rocky/ARG/"
-baseDataDir <- "~/Gdrive Ecoquants/projects/mbon/p2p/data/rocky/ARG"
+```{r}
+# TODO: option to constrain by date range
+range(obs$eventDate)
 
-site_csv <- file.path(baseDataDir, "../AR-PMAD_dashboard-siteDF.csv") 
-obs_csv <- file.path(baseDataDir, "../AR-PMAD_dashboard-occurrence.csv") 
-
-siteDF = read_csv(site_csv)
-Occurrence = read_csv(obs_csv)
-
-## reorder strata factor
-Occurrence$strata = factor(Occurrence$strata, levels = c("lowtide", "midtide", "hightide"))
+# TODO: option to constrain by strata
+obs$strata = factor(obs$strata, levels = c("lowtide", "midtide", "hightide"))
+table(obs$strata)
 ```
 
+### setup abundance data for NMDS
+
+```{r}
+# d_n: dataframe(d) of abundance(n)
+d_n <- obs %>% 
+  filter(
+    !is.na(abundance)) %>% 
+  group_by(siteCode, scientificName) %>% 
+  summarize(
+    n = mean(abundance)) %>% 
+  ungroup() %>% 
+  complete(siteCode, scientificName, fill = list(n = 0)) %>% 
+  spread(scientificName, n) %>% 
+  column_to_rownames("siteCode")
+#View(d_n)
+
+datatable(head(d_n))
+```
+
+### run NMDS for abundance data
+
+```{r}
+nmds_n <- metaMDS(
+  d_n, # site-by-species matrix
+  k=2) # number of reduced dimensions
+
+plot(nmds_n, type='t')
+```
+
+### setup percent cover data for NMDS
+
+```{r}
+# d_pct: dataframe(d) of percent cover(pct)
+d_pct <- obs %>% 
+  filter(
+    !is.na(Cover)) %>% 
+  group_by(siteCode, scientificName) %>% 
+  summarize(
+    pct = mean(Cover)) %>% 
+  ungroup() %>% 
+  complete(siteCode, scientificName, fill = list(pct = 0)) %>% 
+  spread(scientificName, pct) %>% 
+  column_to_rownames("siteCode")
+#View(d_pct)
+
+datatable(head(d_pct))
+```
+
+### run NMDS for percent cover data
+
+```{r}
+nmds_pct <- metaMDS(
+  d_pct,      # site-by-species matrix
+  k=2,        # number of reduced dimensions
+  trymax=100) # alleviate non-convergence
+
+stressplot(nmds_pct)
+plot(nmds_pct)
+
+ordiplot(nmds_pct, type="n")
+orditorp(nmds_pct, display="species", col="red", air=0.01)
+orditorp(nmds_pct, display=  "sites", cex= 1.25, air=0.01)
+```
+
+### cluster NMDS for percent cover data
+
+```{r}
+# transformed Bray-Curtis as amount (density) of species
+d_pct_bray_transformed = vegdist(wisconsin(sqrt(d_pct)), method='bray')
+
+# hierarchically cluster sites
+clu = hclust(d_pct_bray_transformed, 'average')
+plot(clu)
+
+# cutoff clusters to 2 groups
+plot(clu)
+rect.hclust(clu, k=2) # or by height of similarity h=0.5
+
+grp = cutree(clu, k=2)
+
+plot(nmds_pct, display='sites')
+ordihull(nmds_pct, grp, lty=2, col='red', label=T)
+```
+
+## Gil's Israel rocky shore data
+
+```{r}
+obs_xlsx <- "~/Gdrive Ecoquants/meetings/2019-04 MBON P2P in Mexico/Rilov_Israel rocky_shore_monitoring data_2009-18_for Ben.xlsx"
+```
+
+### load and prep data
+
+```{r}
+obs_isr    <- read_excel(obs_xlsx, n_max = 8445)
+method_isr <- read_excel(obs_xlsx, n_max = 8447, col_types="text") %>% tail(1)
+
+cols_isr <- method_isr %>% 
+  gather("column", "method")
+i_cols_meta_end <- min(which(cols_isr$method %in% c("#","%")))-1
+cols_meta       <- names(obs_isr)[1:i_cols_meta_end]
+cols_abundance  <- cols_isr %>% 
+  filter(method == "#") %>% 
+  pull(column)
+cols_pctcover  <- cols_isr %>% 
+  filter(method == "%") %>% 
+  pull(column)
+  
+table(obs_isr$Year, obs_isr$Season)
+  #      Fall Spring Summer Winter
+  # 2009  555      0     60      0
+  # 2010  465    240    150    240
+  # 2011  450    195    225    240
+  # 2012  450    240    225    240
+  # 2013  450    120    180    225
+  # 2014  450    210    105    120
+  # 2015  300    210    120    120
+  # 2016  330    120    120     90
+  # 2017  120    120    120    240
+  # 2018  270    120     90    120
+
+d_n_isr <- obs_isr %>% 
+  filter(Year == 2018, Season == "Fall") %>% 
+  #select(Trans_Type) %>% table() %>% 
+  # Center     Edge Mid-high  Mid-mid 
+  #    105       90       45       30
+  filter(Trans_Type == "Center") %>% 
+  select(Site_name, Unique_Code, !!!cols_abundance) %>% 
+  gather("species", "n", -Site_name, -Unique_Code) %>% 
+  filter(!is.na(n)) %>% 
+  complete(
+    species, nesting(Site_name, Unique_Code), 
+    fill = list(n = 0)) %>% 
+  group_by(
+    Site_name, species) %>% 
+  summarize(
+    n = mean(n)) %>% 
+  ungroup() %>% 
+  spread(species, n) %>% 
+  column_to_rownames("Site_name")
+# View(d_n_isr)
+  
+datatable(head(d_n_isr))
+  
+d_pct_isr <- obs_isr %>% 
+  filter(Year == 2018, Season == "Fall") %>% 
+  #select(Trans_Type) %>% table() %>% 
+  # Center     Edge Mid-high  Mid-mid 
+  #    105       90       45       30
+  filter(Trans_Type == "Center") %>% 
+  select(Site_name, Unique_Code, !!!cols_pctcover) %>% 
+  gather("species", "pct", -Site_name, -Unique_Code) %>% 
+  filter(!is.na(pct)) %>% 
+  complete(
+    species, nesting(Site_name, Unique_Code), 
+    fill = list(pct = 0)) %>% 
+  group_by(
+    Site_name, species) %>% 
+  summarize(
+    pct = mean(pct)) %>% 
+  ungroup() %>% 
+  spread(species, pct) %>% 
+  column_to_rownames("Site_name")
+# View(d_pct_isr)
+
+# View(obs_isr) # tail(obs_isr$Unique_Code)
+# View(cols_isr)
+# View(method_isr)
+
+datatable(head(d_pct_isr))
+```
+
+### run NMDS for percent cover data
+
+```{r}
+isr_nmds_pct <- metaMDS(
+  d_pct_isr,  # site-by-species matrix
+  k=2,        # number of reduced dimensions
+  trymax=100) # alleviate non-convergence
+
+stressplot(isr_nmds_pct)
+plot(isr_nmds_pct)
+
+ordiplot(isr_nmds_pct, type="n")
+orditorp(isr_nmds_pct, display="species", col="red", air=0.01)
+orditorp(isr_nmds_pct, display=  "sites", cex= 1.25, air=0.01)
+
+# transformed Bray-Curtis as amount (density) of species
+isr_d_pct_bray_transformed = vegdist(wisconsin(sqrt(d_pct_isr)), method='bray')
+
+# hierarchically cluster sites
+isr_clu = hclust(isr_d_pct_bray_transformed, 'average')
+plot(isr_clu)
+
+# cutoff clusters to 2 groups
+plot(isr_clu)
+rect.hclust(isr_clu, k=4) # or by height of similarity h=0.5
+
+isr_grp = cutree(isr_clu, k=4)
+
+plot(isr_nmds_pct, display='sites')
+ordihull(isr_nmds_pct, isr_grp, lty=2, col='red', label=T)
+```
