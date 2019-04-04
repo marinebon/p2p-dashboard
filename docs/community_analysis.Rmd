@@ -1,0 +1,54 @@
+---
+title: "Untitled"
+output: html_document
+params:  
+  data:  
+    input: file  
+    label: 'Input dataset:'  
+    value: myData.csv  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r data}
+cat(params$data)
+c <- read.csv(params$data)
+print(c)
+```
+
+```{r}
+library(flexdashboard)
+library(readr)
+library(reshape2)
+library(leaflet)
+library(ggplot2)
+library(vegan)
+library(plotly)
+library(lubridate)
+library(dplyr)
+
+library(RColorBrewer)
+palette(brewer.pal(8, "Set2"))
+```
+
+```{r}
+
+```
+
+
+```{r dataread, eval=F}
+#baseDataDir = "../data/rocky/ARG/"
+baseDataDir <- "~/Gdrive Ecoquants/projects/mbon/p2p/data/rocky/ARG"
+
+site_csv <- file.path(baseDataDir, "../AR-PMAD_dashboard-siteDF.csv") 
+obs_csv <- file.path(baseDataDir, "../AR-PMAD_dashboard-occurrence.csv") 
+
+siteDF = read_csv(site_csv)
+Occurrence = read_csv(obs_csv)
+
+## reorder strata factor
+Occurrence$strata = factor(Occurrence$strata, levels = c("lowtide", "midtide", "hightide"))
+```
+
