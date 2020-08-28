@@ -1,4 +1,4 @@
-# P2P
+# MBON Pole to Pole Data Dashboard
 MBON Pole to Pole biodiversity explorer
 
 This is a Rstudio Flexidashboard that produces a visualization of MBON Pole to Pole biodiversity observations.
